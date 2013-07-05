@@ -1,0 +1,5 @@
+*.o
+*.eps
+*.png
+*.txt
+mandelbrot
