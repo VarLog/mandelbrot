@@ -13,8 +13,11 @@
 #include "timer.h"
 #include "log.h"
 
-const int windowWidth = 800;
-const int windowHeight = 600;
+#define MAX_NODS 64
+
+const int factor = 4;
+const int windowWidth = 64 * factor * 4;
+const int windowHeight = 64 * factor * 3;
 
 int InitMPI_AndIdentifyRank( int argc, char **argv )
 {
@@ -23,6 +26,20 @@ int InitMPI_AndIdentifyRank( int argc, char **argv )
   MPI_Init(&argc, &argv);
   MPI_Comm_size(MPI_COMM_WORLD, &size);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+   
+  if( size > MAX_NODS ) {
+    if( !rank ) {
+      fprintf( stderr, "Only %d nods max allowed! Exiting..\n", MAX_NODS );
+    }
+    return -1;
+  }
+
+  if( size > 4 && size % 8 ) { 
+    if( !rank ) {
+      fprintf( stderr, "Nods count must be divisible by 8 or less than 5! Exiting..\n" );
+    }
+    return -1;
+  }
   
   int namelen;
   char processor_name[MPI_MAX_PROCESSOR_NAME];
@@ -60,7 +77,7 @@ void computeBlock( unsigned char *dataBuf, int rankOffset, int stride, int numRo
 
       // project the screen coordinate into the complex plane
       const float rCr = -2.0f + 3.0f * i / windowWidth;
-      const float rCi = -1.0f + 2.0f * (j*stride + rankOffset) / windowHeight;
+      const float rCi = -1.125f + 2.25f * (j*stride + rankOffset) / windowHeight;
 
       // and rotate
       const float rotationCenterX = -0.5f;
@@ -71,8 +88,9 @@ void computeBlock( unsigned char *dataBuf, int rankOffset, int stride, int numRo
       float Zi = 0.0f;
       
       // and run the Mandelbrot function
+      const int iter_count = 19;
       int iter = 0;
-      while ( iter < 19 )
+      while ( iter < iter_count )
       {
         float Zr_new = Zr * Zr - Zi * Zi + Cr;
         Zi = 2 * Zr * Zi + Ci;
@@ -86,7 +104,7 @@ void computeBlock( unsigned char *dataBuf, int rankOffset, int stride, int numRo
         ++iter;
       }
       
-      dataBuf[ i + j * windowWidth ] = 19 - iter;
+      dataBuf[ i + j * windowWidth ] = iter_count - iter;
     }
   }
 
@@ -94,8 +112,8 @@ void computeBlock( unsigned char *dataBuf, int rankOffset, int stride, int numRo
   angle += 0.001f;
 }
 
-double times[64];
-double times_comp[64];
+double times[MAX_NODS+1];
+double times_comp[MAX_NODS];
 
 int masterTick( int message, unsigned char *dataBuf )
 {
@@ -105,7 +123,7 @@ int masterTick( int message, unsigned char *dataBuf )
   int size, rank;
   MPI_Comm_size(MPI_COMM_WORLD, &size);
   MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-
+  
   buf[0] = message;
 
   static Timer timer;
@@ -136,8 +154,9 @@ int masterTick( int message, unsigned char *dataBuf )
     times_comp[0] = times[1];
 
     // kick off non-blocking receives
+    // XXX: ignored the residue!
     int dataBufSize = windowWidth*windowHeight/size;
-    MPI_Request reqs[64], reqs_time[64];
+    MPI_Request reqs[MAX_NODS], reqs_time[MAX_NODS];
     int curReq = 0;
     for ( int i = 0;  i < size;  i++ )
     {
@@ -155,15 +174,15 @@ int masterTick( int message, unsigned char *dataBuf )
     }
 
     // wait for all the receives
-    MPI_Status ress[64];
+    MPI_Status ress[MAX_NODS];
     for ( int i = 0;  i < size-1;  i++ )
     {
       int index;
       MPI_Waitany( size-1, reqs, &index, ress );
       times[2+index] = timer.elapsed() - times[2+index];
-
-      MPI_Waitany( size-1, reqs_time, &index, ress );
     }
+
+    MPI_Waitall( size-1, reqs_time, ress );
 
     times[0] = timer.elapsed() - times[0];
   }
@@ -421,30 +440,32 @@ void DrawGLScene()
   glEnd();
   */
   
-  for ( int i = 0;  i < 8;  i++ )
+  int mpiSize;
+  MPI_Comm_size(MPI_COMM_WORLD, &mpiSize);
+  
+  for ( int i = 0;  i < mpiSize;  i++ )
   {
     glColor4f(1.0f, 0.0f, 0.0f, 0.3f);
-    glVertex3f(0.0f, (i) * windowHeight/8, 0.4f);
-    glVertex3f(times[i+1] * 20000.0f, (i) * windowHeight/8, 0.4f);
-    glVertex3f(times[i+1] * 20000.0f, (i+1) * windowHeight/8, 0.4f);
-    glVertex3f(0.0f, (i+1) * windowHeight/8, 0.4f);
+    glVertex3f(0.0f, (i) * windowHeight/mpiSize, 0.4f);
+    glVertex3f(times[i+1] * 20000.0f, (i) * windowHeight/mpiSize, 0.4f);
+    glVertex3f(times[i+1] * 20000.0f, (i+1) * windowHeight/mpiSize, 0.4f);
+    glVertex3f(0.0f, (i+1) * windowHeight/mpiSize, 0.4f);
   }
 
-  for ( int i = 0;  i < 8;  i++ )
+  for ( int i = 0;  i < mpiSize;  i++ )
   {
     glColor4f(0.0f, 1.0f, 0.0f, 0.3f);
-    glVertex3f(0.0f, (i) * windowHeight/8, 0.4f);
-    glVertex3f((times[i+1] - times_comp[i]) * 20000.0f, (i) * windowHeight/8, 0.4f);
-    glVertex3f((times[i+1] - times_comp[i]) * 20000.0f, (i+1) * windowHeight/8, 0.4f);
-    glVertex3f(0.0f, (i+1) * windowHeight/8, 0.4f);
+    glVertex3f(0.0f, (i) * windowHeight/mpiSize, 0.4f);
+    glVertex3f((times[i+1] - times_comp[i]) * 20000.0f, (i) * windowHeight/mpiSize, 0.4f);
+    glVertex3f((times[i+1] - times_comp[i]) * 20000.0f, (i+1) * windowHeight/mpiSize, 0.4f);
+    glVertex3f(0.0f, (i+1) * windowHeight/mpiSize, 0.4f);
   }
   glEnd();
   
   // print times into log file
-  for( int i = 0;  i < 8;  i++ ) {
-    char tag[7] = "times";
-    tag[5] = '0' + i;
-    tag[6] = '\0';
+  for( int i = 0;  i < mpiSize;  i++ ) {
+    char tag[8];
+    sprintf( tag, "times%d", i );
     Log::out( tag, "%17.12f %17.12f", times[i+1], ( times[i+1] - times_comp[i] ) );
   }
   
@@ -483,14 +504,14 @@ void DrawGLScene()
   glEnd();
 
   // Position The Text On The Screen
-  glColor3f(1.0f, 1.0f, 0.0f);
-  glRasterPos2f(0.0f, 20.0f);
+  glColor3f(0.2f, 0.5f, 0.7f);
+  glRasterPos2f(3.0f, 20.0f);
 
   char str[1024];
     sprintf( str, "Time elapsed: %8.2lf seconds\n", timer.elapsed());
     glPrint(str); // print gl text to the screen.
   
-  glRasterPos2f(0.0f, 40.0f);
+  glRasterPos2f(3.0f, 40.0f);
   static int framesRendered = 0;
     sprintf( str, "Average FPS: %8.2lf\n", ++framesRendered / timer.elapsed());
     glPrint(str); // print gl text to the screen.
@@ -515,8 +536,9 @@ void keyPressed(unsigned char key, int x, int y)
 }
 
 int main(int argc, char **argv) 
-{  
-  if ( InitMPI_AndIdentifyRank( argc, argv ) == 0 )
+{ 
+  int ret = InitMPI_AndIdentifyRank( argc, argv );
+  if ( ret == 0 )
   {
     /* Initialize GLUT state - glut will take any command line arguments that pertain to it or 
     X Windows - look at its documentation at http://reality.sgi.com/mjk/spec3/spec3.html */  
@@ -566,7 +588,7 @@ int main(int argc, char **argv)
     /* We fall through to here once ESC is pressed or the window closed by the OS */
     masterTick(-1, NULL);
   }
-  else
+  else if( ret > 0 )
   {
     workerLoop();
     // some worker machine specific code
