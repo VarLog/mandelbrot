@@ -1,0 +1,31 @@
+What is it?
+==========
+
+This application for calculation Mandelbrot set in real time on INPE MEPhI cluster.
+
+How use it?
+==========
+
+Building:
+$> make clean all
+rm -fv timer.o log.o main.o main
+mpic++ -g -Wall  -c timer.c
+mpic++ -g -Wall  -c log.c
+mpic++ -g -Wall  -c main.c
+mpic++ -lGL -lX11 -lglut -lGLU timer.o log.o main.o -o mandelbrot
+$>
+
+And run:
+$> mpirun -n 8 ./mandelbrot 
+...
+$>
+
+App write logs into `log.txt'. For ploting graphics use `stat.pl':
+$> ./stat.pl log.txt
+$> 
+
+You can found your plot in `plot.eps'.
+
+Enjoy!
+
+
