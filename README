@@ -3,7 +3,7 @@ What is it?
 
 This application for calculation Mandelbrot set in real time on INPE MEPhI cluster.
 
-How use it?
+How to use it?
 ==========
 
 Building:
@@ -20,7 +20,7 @@ $> mpirun -n 8 ./mandelbrot
 ...
 $>
 
-App write logs into `log.txt'. For ploting graphics use `stat.pl':
+App writes logs into `log.txt'. For ploting graphics use `stat.pl':
 $> ./stat.pl log.txt
 $> 
 
