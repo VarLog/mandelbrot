@@ -21,5 +21,5 @@ log.o: log.c
 	$(CC) $(DEBUG) $(CPPFLAGS) -c log.c
  
 clean: 
-	rm -fv $(OBJ) main
+	rm -fv $(OBJ) mandelbrot
 
