@@ -5,7 +5,7 @@ CC = mpic++
 LDLIBS += -lGL -lX11 -lglut -lGLU
 #CPPFLAGS += 
 
-DEBUG = -g -Wall
+#DEBUG = -g -Wall
 OBJ = timer.o log.o main.o
 
 mandelbrot: $(OBJ)
